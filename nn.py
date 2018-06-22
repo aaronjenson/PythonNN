@@ -3,99 +3,142 @@ import random
 
 
 def sigmoid(x):
+    """
+    activation function
+    """
     return 1 / (1 + np.exp(-x))
 
 
 def dsigmoid(y):
+    """
+    derivative of activation function
+    """
     return y * (1.0 - y)
 
 
 class NeuralNetwork(object):
-    def __init__(self, input, hidden, output):
-        self.input = input + 1
-        self.hidden = hidden
-        self.output = output
+    """
+    universal function approximater
+    """
 
-        self.ai = [1.0] * self.input
-        self.ah = [1.0] * self.hidden
-        self.ao = [1.0] * self.output
+    def __init__(self, *layers):
+        """
+        :param layers: number of nodes in each layer
+        """
 
-        self.wi = np.random.randn(self.input, self.hidden)
-        self.wo = np.random.randn(self.hidden, self.output)
+        # check that there is at least an input and output layer
+        if len(layers) < 2:
+            raise ValueError("Not enough layers!")
 
-        self.ci = np.zeros((self.input, self.hidden))
-        self.co = np.zeros((self.hidden, self.output))
+        # convert layers tuple to list, add bias
+        self.layers = list(layers)
+        self.layers[0] += 1
+        # save some values for easier use later
+        self.num_layers = len(self.layers)
+        self.inputs = self.layers[0]
+        self.outputs = self.layers[self.num_layers - 1]
+
+        # create activation lists
+        self.activations = []
+        for i in self.layers:
+            self.activations.append([1.0] * i)
+
+        # create weights matrices w/ random values
+        self.weights = [None] * self.num_layers
+        for i in range(1, self.num_layers):
+            self.weights[i] = np.random.randn(self.layers[i - 1], self.layers[i])
+
+        # create change matrices of zeros
+        self.changes = [None] * self.num_layers
+        for i in range(1, self.num_layers):
+            self.changes[i] = np.zeros((self.layers[i - 1], self.layers[i]))
 
     def feed_forward(self, inputs):
-        if len(inputs) != self.input - 1:
+        """
+        calculate a prediction based off the inputs
+        :param inputs: list of inputs
+        :return: list of outputs
+        """
+
+        # check that the number of inputs is correct
+        if len(inputs) != self.inputs - 1:
             raise ValueError('Wrong number of inputs')
 
-        for i in range(self.input - 1):
-            self.ai[i] = inputs[i]
+        # set input activations to inputs
+        for i in range(self.inputs - 1):
+            self.activations[0][i] = inputs[i]
 
-        for j in range(self.hidden):
-            sum = 0.0
-            for i in range(self.input):
-                sum += self.ai[i] * self.wi[i][j]
-            self.ah[j] = sigmoid(sum)
+        # calculate activations of each layer
+        for i in range(1, self.num_layers):
+            for j in range(self.layers[i]):
+                sum = 0.0
+                for k in range(self.layers[i - 1]):
+                    sum += self.activations[i - 1][k] * self.weights[i][k][j]
+                self.activations[i][j] = sigmoid(sum)
 
-        for k in range(self.output):
-            sum = 0.0
-            for j in range(self.hidden):
-                sum += self.ah[j] * self.wo[j][k]
-            self.ao[k] = sigmoid(sum)
+        # return the output layer's activations
+        return self.activations[len(self.activations) - 1][:]
 
-        return self.ao[:]
+    def back_propagate(self, targets, learning_rate):
+        """
+        change weights based off the difference between activations and targets
+        must be called after feed_forward
+        :param targets: list of targets, same size as outputs
+        :param learning_rate: learning rate
+        :return: current total error
+        """
 
-    def back_propagate(self, targets, N):
-        if len(targets) != self.output:
+        # check that number of targets is same as number of outputs
+        if len(targets) != self.outputs:
             raise ValueError('Wrong number of targets')
 
-        output_deltas = [0.0] * self.output
+        # initialize delta lists for each layer, except inputs
+        deltas = [None] * self.num_layers
+        for i in range(1, self.num_layers):
+            deltas[i] = [0.0] * self.layers[i]
 
-        for k in range(self.output):
-            error = -(targets[k] - self.ao[k])
-            output_deltas[k] = dsigmoid(self.ao[k]) * error
+        # initialize output deltas based on targets
+        for i in range(self.outputs):
+            error = -(targets[i] - self.activations[len(self.activations) - 1][i])
+            deltas[self.num_layers - 1][i] = dsigmoid(self.activations[len(self.activations) - 1][i]) * error
 
-        hidden_deltas = [0.0] * self.hidden
-        for j in range(self.hidden):
-            error = 0.0
-            for k in range(self.output):
-                error += output_deltas[k] * self.wo[j][k]
-            hidden_deltas[j] = dsigmoid(self.ah[j]) * error
+        # calculate deltas for each layer
+        for i in range(self.num_layers - 2, 0, -1):
+            for j in range(self.layers[i]):
+                error = 0.0
+                for k in range(self.layers[i + 1]):
+                    error += deltas[i + 1][k] * self.weights[i + 1][j][k]
+                deltas[i][j] = dsigmoid(self.activations[i][j]) * error
 
-        for j in range(self.hidden):
-            for k in range(self.output):
-                change = output_deltas[k] * self.ah[j]
-                self.wo[j][k] -= N * change + self.co[j][k]
-                self.co[j][k] = change
+        # change the weights based off the deltas
+        for i in range(self.num_layers - 2, -1, -1):
+            for j in range(self.layers[i]):
+                for k in range(self.layers[i + 1]):
+                    change = deltas[i + 1][k] * self.activations[i][j]
+                    self.weights[i + 1][j][k] -= learning_rate * change + self.changes[i + 1][j][k]
+                    self.changes[i + 1][j][k] = change
 
-        for i in range(self.input):
-            for j in range(self.hidden):
-                change = hidden_deltas[j] * self.ai[i]
-                self.wi[i][j] -= N * change + self.ci[i][j]
-                self.ci[i][j] = change
-
+        # calculate and return total error
         error = 0.0
-
-        for k in range(len(targets)):
-            error += 0.5 * (targets[k] - self.ao[k]) ** 2
-
+        for i in range(len(targets)):
+            error += 0.5 * (targets[i] - self.activations[len(self.activations) - 1][i]) ** 2
         return error
 
-    def train(self, patterns, iterations=3000, N=0.0002):
+    def train(self, patterns, iterations=3000, learning_rate=0.0002):
+        """
+        trains network based off the patterns given
+        :param patterns: list of lists containing lists for inputs and outputs of training data
+        :param iterations: number of times to cycle through the patterns, default=3000
+        :param learning_rate: learning rate, default=0.0002
+        """
+
+        # loop through specified number of times,
+        # multiplied by number of patterns, since each loop trains on only one pattern
         for i in range(iterations * len(patterns)):
-            error = 0.0
             p = random.choice(patterns)
             inputs = p[0]
             targets = p[1]
             self.feed_forward(inputs)
-            error = self.back_propagate(targets, N)
+            error = self.back_propagate(targets, learning_rate)
             if i % (500 * len(patterns)) == 0:
                 print('error %-.5f' % error)
-
-    def predict(self, X):
-        predictions = []
-        for p in X:
-            predictions.append(self.feed_forward(p))
-        return predictions

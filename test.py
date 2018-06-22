@@ -7,8 +7,8 @@ data = [[[0, 0], [0]],
 
 
 def main():
-    neural_network = nn.NeuralNetwork(2, 4, 1)
-    neural_network.train(data, 5000, 0.0001)
+    neural_network = nn.NeuralNetwork(2, 4, 4, 1)
+    neural_network.train(data)
 
     print('[0, 0] => %-.5f' % neural_network.feed_forward([0, 0])[0])
     print('[0, 1] => %-.5f' % neural_network.feed_forward([0, 1])[0])
